@@ -1,4 +1,4 @@
-import * as PIXI from 'https://cdn.jsdelivr.net/npm/pixi.js@7/+esm';
+import * as PIXI from 'https://unpkg.com/pixi.js@7.3.2/dist/esm/pixi.mjs';
 import { CONFIG } from './config.js';
 import { DungeonGenerator } from './dungeon.js';
 import { GameRenderer } from './renderer.js';
@@ -21,18 +21,19 @@ export class Game {
      * Initialize the game
      */
     async init() {
-        // Initialize PixiJS first
-        await PIXI.Application.init();
-        
-        // Create PixiJS application
-        this.app = new PIXI.Application({
-            width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
-            height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
-            backgroundColor: CONFIG.COLORS.FLOOR,
-            resolution: Math.min(window.devicePixelRatio || 1, 2),
-            autoDensity: true,
-            antialias: true
-        });
+        try {
+            // Initialize PixiJS first
+            await PIXI.Application.init();
+            
+            // Create PixiJS application
+            this.app = new PIXI.Application({
+                width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
+                height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
+                backgroundColor: CONFIG.COLORS.FLOOR,
+                resolution: Math.min(window.devicePixelRatio || 1, 2),
+                autoDensity: true,
+                antialias: true
+            });
 
         // Insert canvas into DOM
         document.getElementById('game-container').insertBefore(

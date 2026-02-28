@@ -1,4 +1,4 @@
-import * as PIXI from 'https://cdn.jsdelivr.net/npm/pixi.js@7/+esm';
+import * as PIXI from 'https://unpkg.com/pixi.js@7.3.2/dist/esm/pixi.mjs';
 import { CONFIG } from '../game/config.js';
 import { PlayerEntity, EnemyEntity, ItemEntity, StairsEntity } from '../entities/entity.js';
 
