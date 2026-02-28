@@ -21,10 +21,11 @@ export class Game {
      * Initialize the game
      */
     async init() {
-        // Create PixiJS application
-        this.app = new PIXI.Application();
+        // Initialize PixiJS first
+        await PIXI.Application.init();
         
-        await this.app.init({
+        // Create PixiJS application
+        this.app = new PIXI.Application({
             width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
             height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
             backgroundColor: CONFIG.COLORS.FLOOR,
