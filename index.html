@@ -15,43 +15,14 @@
             overflow: hidden;
             touch-action: none;
             user-select: none;
-            -webkit-user-select: none;
-        }
-        #game-container {
-            position: relative;
         }
         canvas {
             display: block;
             border: 2px solid #333;
             border-radius: 4px;
         }
-        #ui {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: #fff;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            text-shadow: 2px 2px 4px #000;
-            z-index: 10;
-            pointer-events: none;
-        }
-        #hp-bar-container {
-            width: 120px;
-            height: 12px;
-            background: #222;
-            border: 2px solid #444;
-            border-radius: 6px;
-            margin-top: 5px;
-            overflow: hidden;
-        }
-        #hp-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #4ade80, #22c55e);
-            transition: width 0.3s;
-        }
         
-        /* Virtual Joystick */
+        /* Virtual Joystick - Mobile only */
         #joystick-zone {
             position: fixed;
             bottom: 30px;
@@ -77,10 +48,8 @@
             border-radius: 50%;
             left: 35px;
             top: 35px;
-            transition: transform 0.1s;
         }
         
-        /* Attack button */
         #btn-attack {
             position: fixed;
             bottom: 50px;
@@ -96,541 +65,230 @@
             color: #fff;
             font-size: 32px;
             z-index: 100;
-            user-select: none;
         }
         #btn-attack:active {
             background: rgba(255,100,100,0.6);
-            transform: scale(0.95);
         }
         
-        /* Hide joystick on PC */
-        @media (min-width: 1024px) {
-            #joystick-zone, #btn-attack {
-                display: none !important;
-            }
-        }
-        
-        #message-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.85);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            z-index: 200;
-        }
-        #message-text {
-            color: #fff;
-            font-family: 'Courier New', monospace;
-            font-size: 24px;
-            text-align: center;
-            line-height: 1.6;
+        @media (min-width: 800px) {
+            #joystick-zone, #btn-attack { display: none !important; }
         }
     </style>
 </head>
 <body>
-    <div id="game-container">
-        <canvas id="game"></canvas>
-        <div id="ui">
-            <div>♥ <span id="hp-text">100</span>/<span id="max-hp-text">100</span></div>
-            <div id="hp-bar-container"><div id="hp-fill"></div></div>
-            <div style="margin-top:8px">🏆 <span id="floor-text">1</span>/5</div>
-        </div>
-        
-        <!-- Virtual Joystick -->
-        <div id="joystick-zone">
-            <div id="joystick-base"></div>
-            <div id="joystick-knob"></div>
-        </div>
-        
-        <!-- Attack Button -->
-        <div id="btn-attack">⚔</div>
-
-        <div id="message-overlay">
-            <div id="message-text"></div>
-        </div>
+    <canvas id="game"></canvas>
+    
+    <!-- Joystick -->
+    <div id="joystick-zone">
+        <div id="joystick-base"></div>
+        <div id="joystick-knob"></div>
     </div>
+    
+    <!-- Attack -->
+    <div id="btn-attack">⚔</div>
 
     <script>
-    // ==================== CONFIG ====================
-    const TILE_SIZE = 20;  // Smaller tiles for more detail
+    const TILE_SIZE = 20;
     const GRID_WIDTH = 24;
     const GRID_HEIGHT = 20;
     const MAX_FLOORS = 5;
 
-    // ==================== SVG SPRITES ====================
-    const SPRITES = {
-        player: `<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="4" fill="#4ade80"/><circle cx="16" cy="12" r="4" fill="#22c55e"/><rect x="8" y="20" width="6" height="6" fill="#22c55e"/><rect x="18" y="20" width="6" height="6" fill="#22c55e"/></svg>`,
-        
-        slime: `<svg viewBox="0 0 32 32"><path d="M6 20 Q4 10 16 8 Q28 10 26 20 Q28 26 16 28 Q4 26 6 20" fill="#60a5fa"/><circle cx="12" cy="14" r="3" fill="#1e3a5f"/><circle cx="20" cy="14" r="3" fill="#1e3a5f"/><path d="M12 22 Q16 24 20 22" stroke="#1e3a5f" stroke-width="2" fill="none"/></svg>`,
-        
-        skeleton: `<svg viewBox="0 0 32 32"><rect x="12" y="4" width="8" height="8" rx="2" fill="#e5e5e5"/><circle cx="14" cy="10" r="2" fill="#1a1a1a"/><circle cx="18" cy="10" r="2" fill="#1a1a1a"/><rect x="14" y="14" width="4" height="6" fill="#e5e5e5"/><rect x="8" y="20" width="4" height="8" fill="#e5e5e5"/><rect x="20" y="20" width="4" height="8" fill="#e5e5e5"/><rect x="12" y="28" width="3" height="4" fill="#e5e5e5"/><rect x="17" y="28" width="3" height="4" fill="#e5e5e5"/></svg>`,
-        
-        health: `<svg viewBox="0 0 32 32"><path d="M16 4 L24 8 L24 16 L16 28 L8 16 L8 8 Z" fill="#f472b6"/><path d="M16 8 L20 12 L20 16 L16 24 L12 16 L12 12 Z" fill="#f9a8d4"/></svg>`,
-        
-        stairs: `<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" fill="#fbbf24"/><rect x="8" y="8" width="16" height="3" fill="#b45309"/><rect x="8" y="14" width="16" height="3" fill="#b45309"/><rect x="8" y="20" width="16" height="3" fill="#b45309"/></svg>`,
-        
-        wall: `<svg viewBox="0 0 20 20"><rect width="20" height="20" fill="#2a2a3a"/><rect x="1" y="1" width="8" height="8" fill="#3a3a4a"/><rect x="11" y="1" width="8" height="8" fill="#3a3a4a"/><rect x="1" y="11" width="8" height="8" fill="#3a3a4a"/><rect x="11" y="11" width="8" height="8" fill="#3a3a4a"/></svg>`,
-        
-        floor: `<svg viewBox="0 0 20 20"><rect width="20" height="20" fill="#151520"/><circle cx="5" cy="5" r="1" fill="#252530"/><circle cx="15" cy="15" r="1" fill="#252530"/></svg>`
-    };
-
-    // ==================== CANVAS ====================
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     canvas.width = GRID_WIDTH * TILE_SIZE;
     canvas.height = GRID_HEIGHT * TILE_SIZE;
 
-    // Create image objects from SVG
-    const images = {};
-    function loadSprites() {
-        Object.keys(SPRITES).forEach(key => {
-            const img = new Image();
-            const svg = 'data:image/svg+xml;base64,' + btoa(SPRITES[key]);
-            img.src = svg;
-            images[key] = img;
-        });
-    }
-
-    // ==================== JOYSTICK ====================
-    const joystick = {
-        active: false,
-        x: 0,
-        y: 0,
-        dx: 0,
-        dy: 0,
-        moveInterval: null
+    // Colors
+    const C = {
+        WALL: '#2a2a3a',
+        FLOOR: '#1a1a25',
+        PLAYER: '#4ade80',
+        SLIME: '#60a5fa',
+        SKELETON: '#d4d4d8',
+        ORC: '#84cc16',
+        HEALTH: '#f472b6',
+        STAIRS: '#fbbf24'
     };
 
-    function initJoystick() {
-        const zone = document.getElementById('joystick-zone');
-        const knob = document.getElementById('joystick-knob');
-        
-        function handleStart(e) {
-            e.preventDefault();
-            joystick.active = true;
-        }
-        
-        function handleMove(e) {
-            if (!joystick.active) return;
-            e.preventDefault();
-            
-            const touch = e.touches ? e.touches[0] : e;
-            const rect = zone.getBoundingClientRect();
-            const centerX = rect.left + 60;
-            const centerY = rect.top + 60;
-            
-            let dx = touch.clientX - centerX;
-            let dy = touch.clientY - centerY;
-            
-            const maxDist = 40;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist > maxDist) {
-                dx = dx / dist * maxDist;
-                dy = dy / dist * maxDist;
-            }
-            
-            joystick.dx = Math.abs(dx) > 10 ? Math.sign(dx) : 0;
-            joystick.dy = Math.abs(dy) > 10 ? Math.sign(dy) : 0;
-            
-            knob.style.transform = `translate(${dx}px, ${dy}px)`;
-            
-            if (!joystick.moveInterval) {
-                joystick.moveInterval = setInterval(applyJoystickMove, 150);
-            }
-        }
-        
-        function handleEnd(e) {
-            joystick.active = false;
-            joystick.dx = 0;
-            joystick.dy = 0;
-            knob.style.transform = 'translate(0, 0)';
-            if (joystick.moveInterval) {
-                clearInterval(joystick.moveInterval);
-                joystick.moveInterval = null;
-            }
-        }
-        
-        zone.addEventListener('touchstart', handleStart);
-        zone.addEventListener('touchmove', handleMove);
-        zone.addEventListener('touchend', handleEnd);
-        zone.addEventListener('mousedown', handleStart);
-        document.addEventListener('mousemove', handleMove);
-        document.addEventListener('mouseup', handleEnd);
-    }
-    
-    function applyJoystickMove() {
-        if (joystick.dx !== 0 || joystick.dy !== 0) {
-            move(joystick.dx, joystick.dy);
-        }
-    }
+    let game = { floor: 1, state: 'PLAYING', map: [], player: null, enemies: [], items: [], stairs: null };
+    let joystick = { active: false, dx: 0, dy: 0, interval: null };
 
-    // ==================== GAME STATE ====================
-    let game = {
-        floor: 1,
-        state: 'PLAYING',
-        map: [],
-        player: null,
-        enemies: [],
-        items: [],
-        stairs: null
-    };
-
-    // ==================== DUNGEON ====================
     function generateDungeon(floor) {
-        game.map = [];
-        game.enemies = [];
-        game.items = [];
-
+        game.map = []; game.enemies = []; game.items = [];
         for (let y = 0; y < GRID_HEIGHT; y++) {
             game.map[y] = [];
             for (let x = 0; x < GRID_WIDTH; x++) {
-                game.map[y][x] = (x === 0 || x === GRID_WIDTH - 1 || y === 0 || y === GRID_HEIGHT - 1) ? 'WALL' : 'FLOOR';
+                game.map[y][x] = (x===0 || x===GRID_WIDTH-1 || y===0 || y===GRID_HEIGHT-1) ? 'WALL' : 'FLOOR';
             }
         }
-
-        game.player = {
-            x: Math.floor(GRID_WIDTH / 2),
-            y: Math.floor(GRID_HEIGHT / 2),
-            hp: 100,
-            maxHp: 100,
-            attack: 12,
-            defense: 5
-        };
-
-        // Enemies - different types with AI
-        const enemyTypes = ['SLIME', 'SKELETON', 'ORC'];
-        for (let i = 0; i < 2 + floor; i++) {
-            let pos = getRandomEmptyPosition();
-            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-            const stats = getEnemyStats(type, floor);
-            game.enemies.push({
-                x: pos.x,
-                y: pos.y,
-                type: type,
-                hp: stats.hp,
-                maxHp: stats.hp,
-                attack: stats.attack,
-                defense: stats.defense,
-                ai: stats.ai,
-                moveCooldown: 0
-            });
+        
+        game.player = { x: Math.floor(GRID_WIDTH/2), y: Math.floor(GRID_HEIGHT/2), hp: 100, maxHp: 100, attack: 12, defense: 5 };
+        
+        const types = [{t:'SLIME',s:15,c:C.SLIME,ai:'random',d:1}, {t:'SKELETON',s:25,c:C.SKELETON,ai:'chase',d:3}, {t:'ORC',s:40,c:C.ORC,ai:'smart',d:5}];
+        for (let i = 0; i < 2+floor; i++) {
+            let p = randPos();
+            let type = types[Math.floor(Math.random()*types.length)];
+            game.enemies.push({ x: p.x, y: p.y, type: type.t, hp: type.s+floor*5, maxHp: type.s+floor*5, attack: type.d+floor, defense: type.d, ai: type.ai, cd: 0 });
         }
-
-        // Items
-        for (let i = 0; i < 1 + Math.floor(floor / 2); i++) {
-            let pos = getRandomEmptyPosition();
-            game.items.push({ x: pos.x, y: pos.y, type: 'HEALTH' });
-        }
-
-        // Stairs
-        game.stairs = getRandomEmptyPosition();
+        
+        for (let i = 0; i < 1+Math.floor(floor/2); i++) game.items.push({x: randPos().x, y: randPos().y, type: 'HEALTH'});
+        game.stairs = randPos();
     }
 
-    function getEnemyStats(type, floor) {
-        switch(type) {
-            case 'SLIME':
-                return { hp: 15 + floor * 5, attack: 5 + floor, defense: 1, ai: 'random' };
-            case 'SKELETON':
-                return { hp: 25 + floor * 8, attack: 8 + floor, defense: 3, ai: 'chase' };
-            case 'ORC':
-                return { hp: 40 + floor * 10, attack: 12 + floor, defense: 5, ai: 'smart' };
-        }
-    }
-
-    function getRandomEmptyPosition() {
+    function randPos() {
         let attempts = 0;
         while (attempts < 100) {
-            const x = Math.floor(Math.random() * (GRID_WIDTH - 4)) + 2;
-            const y = Math.floor(Math.random() * (GRID_HEIGHT - 4)) + 2;
-            if (!isOccupied(x, y)) return { x, y };
+            let x = 2+Math.floor(Math.random()*(GRID_WIDTH-4));
+            let y = 2+Math.floor(Math.random()*(GRID_HEIGHT-4));
+            if (!occ(x,y)) return {x,y};
             attempts++;
         }
-        return { x: 3, y: 3 };
+        return {x:3,y:3};
     }
 
-    function isOccupied(x, y) {
-        if (game.player && x === game.player.x && y === game.player.y) return true;
-        if (game.enemies.some(e => e.x === x && e.y === y)) return true;
-        if (game.items.some(i => i.x === x && i.y === y)) return true;
-        if (game.stairs && x === game.stairs.x && y === game.stairs.y) return true;
+    function occ(x,y) {
+        if (game.player && x===game.player.x && y===game.player.y) return true;
+        if (game.enemies.some(e=>e.x===x && e.y===y)) return true;
+        if (game.items.some(i=>i.x===x && i.y===y)) return true;
+        if (game.stairs && x===game.stairs.x && y===game.stairs.y) return true;
         return false;
     }
 
-    // ==================== ENEMY AI ====================
-    function updateEnemies() {
-        game.enemies.forEach(e => {
-            if (e.moveCooldown > 0) {
-                e.moveCooldown--;
-                return;
-            }
-            
-            let dx = 0, dy = 0;
-            
-            switch(e.ai) {
-                case 'random':
-                    // Random movement
-                    if (Math.random() < 0.5) {
-                        dx = Math.random() > 0.5 ? 1 : -1;
-                    } else {
-                        dy = Math.random() > 0.5 ? 1 : -1;
-                    }
-                    break;
-                    
-                case 'chase':
-                    // Direct chase player
-                    if (game.player.x > e.x) dx = 1;
-                    else if (game.player.x < e.x) dx = -1;
-                    if (game.player.y > e.y) dy = 1;
-                    else if (game.player.y < e.y) dy = -1;
-                    // Prioritize axis with larger distance
-                    if (Math.abs(game.player.x - e.x) > Math.abs(game.player.y - e.y)) {
-                        dy = 0;
-                    } else {
-                        dx = 0;
-                    }
-                    break;
-                    
-                case 'smart':
-                    // Smart: try to get closer, but also consider attacking
-                    const dist = Math.abs(game.player.x - e.x) + Math.abs(game.player.y - e.y);
-                    if (dist < 6) {
-                        // Close enough - chase
-                        if (game.player.x > e.x) dx = 1;
-                        else if (game.player.x < e.x) dx = -1;
-                        if (game.player.y > e.y) dy = 1;
-                        else if (game.player.y < e.y) dy = -1;
-                        if (Math.abs(game.player.x - e.x) > Math.abs(game.player.y - e.y)) dy = 0;
-                        else dx = 0;
-                    } else {
-                        // Wander
-                        if (Math.random() < 0.3) {
-                            dx = Math.random() > 0.5 ? 1 : -1;
-                            dy = Math.random() > 0.5 ? 1 : -1;
-                        }
-                    }
-                    break;
-            }
-            
-            const newX = e.x + dx;
-            const newY = e.y + dy;
-            
-            // Only move if valid
-            if (game.map[newY] && game.map[newY][newX] === 'FLOOR' && !isOccupied(newX, newY)) {
-                e.x = newX;
-                e.y = newY;
-                e.moveCooldown = e.ai === 'smart' ? 1 : 2; // Smart enemies move faster
-            }
-        });
-    }
-
-    // ==================== GAME LOGIC ====================
-    function startFloor() {
-        game.state = 'PLAYING';
-        generateDungeon(game.floor);
-        render();
-        updateUI();
-        hideMessage();
-    }
-
-    function move(dx, dy) {
-        if (game.state !== 'PLAYING') return;
-
-        const newX = game.player.x + dx;
-        const newY = game.player.y + dy;
-
-        if (game.map[newY] && game.map[newY][newX] === 'FLOOR') {
-            game.player.x = newX;
-            game.player.y = newY;
-            
-            // Enemies move after player
+    function move(dx,dy) {
+        if (game.state!=='PLAYING') return;
+        let nx = game.player.x+dx, ny = game.player.y+dy;
+        if (game.map[ny]?.[nx] === 'FLOOR') {
+            game.player.x = nx; game.player.y = ny;
             updateEnemies();
-            
-            checkCollisions();
+            check();
             render();
         }
     }
 
+    function updateEnemies() {
+        game.enemies.forEach(e => {
+            if (e.cd>0) { e.cd--; return; }
+            let dx=0, dy=0;
+            if (e.ai==='random') { dx = Math.random()>.5?1:-1; dy = Math.random()>.5?1:-1; }
+            else if (e.ai==='chase') {
+                if (Math.abs(game.player.x-e.x) > Math.abs(game.player.y-e.y)) dx = Math.sign(game.player.x-e.x);
+                else dy = Math.sign(game.player.y-e.y);
+            } else if (e.ai==='smart') {
+                let dist = Math.abs(game.player.x-e.x)+Math.abs(game.player.y-e.y);
+                if (dist<6) { dx = Math.sign(game.player.x-e.x); dy = Math.sign(game.player.y-e.y); }
+                else if (Math.random()<.3) { dx=Math.random()>.5?1:-1; dy=Math.random()>.5?1:-1; }
+            }
+            if (game.map[e.y+dy]?.[e.x+dx] === 'FLOOR' && !occ(e.x+dx,e.y+dy)) { e.x+=dx; e.y+=dy; e.cd = e.ai==='smart'?1:2; }
+        });
+    }
+
     function attack() {
-        if (game.state !== 'PLAYING') return;
-
-        const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-        let hit = false;
-
-        dirs.forEach(([dx, dy]) => {
-            const tx = game.player.x + dx;
-            const ty = game.player.y + dy;
-
-            game.enemies.forEach((e, i) => {
-                if (e.x === tx && e.y === ty) {
-                    const damage = Math.max(1, game.player.attack - e.defense);
-                    e.hp -= damage;
-                    hit = true;
-
-                    if (e.hp <= 0) {
-                        game.enemies.splice(i, 1);
-                    }
+        if (game.state!=='PLAYING') return;
+        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx,dy]) => {
+            game.enemies.forEach((e,i) => {
+                if (e.x===game.player.x+dx && e.y===game.player.y+dy) {
+                    e.hp -= Math.max(1, game.player.attack - e.defense);
+                    if (e.hp<=0) game.enemies.splice(i,1);
                 }
             });
         });
-
-        if (hit) render();
+        render();
     }
 
-    function checkCollisions() {
-        // Items
-        game.items = game.items.filter(item => {
-            if (item.x === game.player.x && item.y === game.player.y) {
-                game.player.hp = Math.min(game.player.hp + 30, game.player.maxHp);
-                return false;
-            }
-            return true;
-        });
-
-        // Stairs
-        if (game.stairs && game.player.x === game.stairs.x && game.player.y === game.stairs.y) {
-            nextFloor();
-            return;
-        }
-
-        // Enemies - take damage on contact
-        game.enemies = game.enemies.filter(e => {
-            if (e.x === game.player.x && e.y === game.player.y) {
-                const damage = Math.max(1, e.attack - game.player.defense);
-                game.player.hp -= damage;
-                return true;
-            }
-            return true;
-        });
-
-        if (game.player.hp <= 0) {
-            game.state = 'LOST';
-            showMessage(`💀 GAME OVER\n\nFloor: ${game.floor}\n\nTap to restart`, () => {
-                game.floor = 1;
-                startFloor();
-            });
-        }
-
-        updateUI();
+    function check() {
+        game.items = game.items.filter(i => !(i.x===game.player.x && i.y===game.player.y) || (game.player.hp=Math.min(game.player.hp+30,game.player.maxHp),false));
+        if (game.stairs && game.player.x===game.stairs.x && game.player.y===game.stairs.y) { nextFloor(); return; }
+        game.enemies = game.enemies.filter(e => !(e.x===game.player.x && e.y===game.player.y) || (game.player.hp-=Math.max(1,e.attack-game.player.defense),true));
+        if (game.player.hp<=0) { game.state='LOST'; alert('GAME OVER\nFloor: '+game.floor+'\nTap to restart'); game.floor=1; startFloor(); }
+        render();
     }
 
     function nextFloor() {
-        if (game.floor >= MAX_FLOORS) {
-            game.state = 'WON';
-            showMessage(`🎉 YOU WIN!\n\nAll ${MAX_FLOORS} floors cleared!\n\nTap to play again`, () => {
-                game.floor = 1;
-                startFloor();
-            });
-        } else {
-            game.floor++;
-            startFloor();
-        }
+        if (game.floor>=MAX_FLOORS) { alert('YOU WIN!'); game.floor=1; }
+        else game.floor++;
+        startFloor();
     }
 
-    // ==================== RENDER ====================
     function render() {
-        // Clear
-        ctx.fillStyle = '#151520';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Map - draw tiles
-        for (let y = 0; y < GRID_HEIGHT; y++) {
-            for (let x = 0; x < GRID_WIDTH; x++) {
-                const key = game.map[y][x] === 'WALL' ? 'wall' : 'floor';
-                if (images[key]) {
-                    ctx.drawImage(images[key], x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                }
-            }
+        ctx.fillStyle = C.FLOOR; ctx.fillRect(0,0,canvas.width,canvas.height);
+        for (let y=0;y<GRID_HEIGHT;y++) for (let x=0;x<GRID_WIDTH;x++) {
+            ctx.fillStyle = game.map[y][x]==='WALL' ? C.WALL : C.FLOOR;
+            ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
         }
-
-        // Stairs
-        if (images.stairs && game.stairs) {
-            ctx.drawImage(images.stairs, game.stairs.x * TILE_SIZE, game.stairs.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        
+        // Stairs - yellow with lines
+        if (game.stairs) {
+            ctx.fillStyle = C.STAIRS;
+            ctx.fillRect(game.stairs.x*TILE_SIZE+2, game.stairs.y*TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4);
+            ctx.fillStyle = '#a16207';
+            for (let i=0;i<3;i++) ctx.fillRect(game.stairs.x*TILE_SIZE+4, game.stairs.y*TILE_SIZE+4+i*5, TILE_SIZE-8, 2);
         }
-
-        // Items
-        if (images.health) {
-            game.items.forEach(item => {
-                ctx.drawImage(images.health, item.x * TILE_SIZE, item.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            });
-        }
-
-        // Enemies
-        game.enemies.forEach(e => {
-            const key = e.type === 'SLIME' ? 'slime' : (e.type === 'SKELETON' ? 'skeleton' : 'slime');
-            if (images[key]) {
-                ctx.drawImage(images[key], e.x * TILE_SIZE, e.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            }
+        
+        // Health items - pink hearts
+        game.items.forEach(i => {
+            ctx.fillStyle = C.HEALTH;
+            ctx.beginPath();
+            ctx.arc(i.x*TILE_SIZE+TILE_SIZE/2, i.y*TILE_SIZE+TILE_SIZE/2, 6, 0, Math.PI*2);
+            ctx.fill();
         });
-
-        // Player
-        if (images.player) {
-            ctx.drawImage(images.player, game.player.x * TILE_SIZE, game.player.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        }
+        
+        // Enemies with simple shapes
+        game.enemies.forEach(e => {
+            ctx.fillStyle = e.type==='SLIME' ? C.SLIME : e.type==='SKELETON' ? C.SKELETON : C.ORC;
+            ctx.fillRect(e.x*TILE_SIZE+2, e.y*TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4);
+            // Eyes
+            ctx.fillStyle = '#000';
+            ctx.fillRect(e.x*TILE_SIZE+5, e.y*TILE_SIZE+5, 3, 3);
+            ctx.fillRect(e.x*TILE_SIZE+12, e.y*TILE_SIZE+5, 3, 3);
+        });
+        
+        // Player - green with face
+        ctx.fillStyle = C.PLAYER;
+        ctx.fillRect(game.player.x*TILE_SIZE+2, game.player.y*TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4);
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(game.player.x*TILE_SIZE+5, game.player.y*TILE_SIZE+6, 3, 3);
+        ctx.fillRect(game.player.x*TILE_SIZE+12, game.player.y*TILE_SIZE+6, 3, 3);
     }
 
-    // ==================== UI ====================
-    function updateUI() {
-        document.getElementById('hp-text').textContent = game.player.hp;
-        document.getElementById('max-hp-text').textContent = game.player.maxHp;
-        
-        const hpPercent = (game.player.hp / game.player.maxHp) * 100;
-        const hpFill = document.getElementById('hp-fill');
-        hpFill.style.width = hpPercent + '%';
-        
-        if (hpPercent > 60) hpFill.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)';
-        else if (hpPercent > 30) hpFill.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
-        else hpFill.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
-
-        document.getElementById('floor-text').textContent = game.floor;
+    // Joystick
+    const jz = document.getElementById('joystick-zone'), jk = document.getElementById('joystick-knob');
+    function handleJoystick(e) {
+        e.preventDefault();
+        const t = e.touches ? e.touches[0] : e;
+        const r = jz.getBoundingClientRect();
+        let dx = t.clientX - r.left - 60, dy = t.clientY - r.top - 60;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d > 40) { dx = dx/d*40; dy = dy/d*40; }
+        jk.style.transform = `translate(${dx}px, ${dy}px)`;
+        joystick.dx = Math.abs(dx)>10 ? Math.sign(dx) : 0;
+        joystick.dy = Math.abs(dy)>10 ? Math.sign(dy) : 0;
+        if (!joystick.interval) joystick.interval = setInterval(() => { if (joystick.dx||joystick.dy) move(joystick.dx, joystick.dy); }, 150);
     }
-
-    function showMessage(text, callback) {
-        const overlay = document.getElementById('message-overlay');
-        document.getElementById('message-text').textContent = text;
-        overlay.style.display = 'flex';
-        
-        const handler = () => {
-            overlay.style.display = 'none';
-            document.removeEventListener('click', handler);
-            document.removeEventListener('touchstart', handler);
-            callback();
-        };
-        
-        setTimeout(() => {
-            document.addEventListener('click', handler);
-            document.addEventListener('touchstart', handler);
-        }, 500);
+    function resetJoystick() {
+        jk.style.transform = 'translate(0,0)';
+        joystick.dx = joystick.dy = 0;
+        clearInterval(joystick.interval);
+        joystick.interval = null;
     }
+    jz.addEventListener('touchstart', handleJoystick);
+    jz.addEventListener('touchmove', handleJoystick);
+    jz.addEventListener('touchend', resetJoystick);
 
-    function hideMessage() {
-        document.getElementById('message-overlay').style.display = 'none';
-    }
-
-    // ==================== CONTROLS ====================
     // Attack button
-    document.getElementById('btn-attack').addEventListener('touchstart', (e) => { e.preventDefault(); attack(); });
-    document.getElementById('btn-attack').addEventListener('mousedown', attack);
+    document.getElementById('btn-attack').addEventListener('touchstart', e => { e.preventDefault(); attack(); });
+    document.getElementById('btn-attack').addEventListener('click', attack);
 
     // Keyboard
-    document.addEventListener('keydown', (e) => {
-        switch(e.key.toLowerCase()) {
-            case 'w': case 'arrowup': move(0, -1); break;
-            case 's': case 'arrowdown': move(0, 1); break;
-            case 'a': case 'arrowleft': move(-1, 0); break;
-            case 'd': case 'arrowright': move(1, 0); break;
-            case ' ': attack(); break;
-        }
+    document.addEventListener('keydown', e => {
+        if (e.key==='w'||e.key==='ArrowUp') move(0,-1);
+        else if (e.key==='s'||e.key==='ArrowDown') move(0,1);
+        else if (e.key==='a'||e.key==='ArrowLeft') move(-1,0);
+        else if (e.key==='d'||e.key==='ArrowRight') move(1,0);
+        else if (e.key===' ') attack();
     });
 
-    // ==================== START ====================
-    loadSprites();
-    initJoystick();
     startFloor();
+    function startFloor() { generateDungeon(game.floor); render(); }
     </script>
 </body>
 </html>
