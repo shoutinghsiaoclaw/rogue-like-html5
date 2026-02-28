@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Simple Rogue-like</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -18,10 +17,11 @@
         }
         #game-container {
             position: relative;
-            width: 100%;
-            max-width: 640px;
-            height: 100vh;
-            max-height: 560px;
+        }
+        canvas {
+            display: block;
+            border: 2px solid #333;
+            border-radius: 4px;
         }
         #ui {
             position: absolute;
@@ -49,7 +49,7 @@
             transition: width 0.3s;
         }
         #controls {
-            position: absolute;
+            position: fixed;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
@@ -79,7 +79,7 @@
             transform: scale(0.95);
         }
         #message-overlay {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
@@ -97,12 +97,12 @@
             font-size: 28px;
             text-align: center;
             line-height: 1.6;
-            white-space: pre-line;
         }
     </style>
 </head>
 <body>
     <div id="game-container">
+        <canvas id="game"></canvas>
         <div id="ui">
             <div>♥ HP: <span id="hp-text">100</span>/<span id="max-hp-text">100</span></div>
             <div id="hp-bar-container"><div id="hp-fill"></div></div>
@@ -128,24 +128,28 @@
 
     <script>
     // ==================== CONFIG ====================
-    const CONFIG = Object.freeze({
-        TILE_SIZE: 28,
-        GRID_WIDTH: 20,
-        GRID_HEIGHT: 14,
-        MAX_FLOORS: 5,
-        COLORS: Object.freeze({
-            WALL: 0x2a2a3a,
-            FLOOR: 0x151520,
-            PLAYER: 0x4ade80,
-            SLIME: 0x60a5fa,
-            SKELETON: 0xe5e5e5,
-            STAIRS: 0xfbbf24,
-            HEALTH: 0xf472b6
-        })
-    });
+    const TILE_SIZE = 28;
+    const GRID_WIDTH = 20;
+    const GRID_HEIGHT = 14;
+    const MAX_FLOORS = 5;
+
+    const COLORS = {
+        WALL: '#2a2a3a',
+        FLOOR: '#151520',
+        PLAYER: '#4ade80',
+        SLIME: '#60a5fa',
+        SKELETON: '#e5e5e5',
+        STAIRS: '#fbbf24',
+        HEALTH: '#f472b6'
+    };
+
+    // ==================== CANVAS ====================
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    canvas.width = GRID_WIDTH * TILE_SIZE;
+    canvas.height = GRID_HEIGHT * TILE_SIZE;
 
     // ==================== GAME STATE ====================
-    let app, gameContainer;
     let game = {
         floor: 1,
         state: 'PLAYING',
@@ -153,8 +157,7 @@
         player: null,
         enemies: [],
         items: [],
-        stairs: null,
-        sprites: {}
+        stairs: null
     };
 
     // ==================== DUNGEON ====================
@@ -163,16 +166,16 @@
         game.enemies = [];
         game.items = [];
 
-        for (let y = 0; y < CONFIG.GRID_HEIGHT; y++) {
+        for (let y = 0; y < GRID_HEIGHT; y++) {
             game.map[y] = [];
-            for (let x = 0; x < CONFIG.GRID_WIDTH; x++) {
-                game.map[y][x] = (x === 0 || x === CONFIG.GRID_WIDTH - 1 || y === 0 || y === CONFIG.GRID_HEIGHT - 1) ? 'WALL' : 'FLOOR';
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                game.map[y][x] = (x === 0 || x === GRID_WIDTH - 1 || y === 0 || y === GRID_HEIGHT - 1) ? 'WALL' : 'FLOOR';
             }
         }
 
         game.player = {
-            x: Math.floor(CONFIG.GRID_WIDTH / 2),
-            y: Math.floor(CONFIG.GRID_HEIGHT / 2),
+            x: Math.floor(GRID_WIDTH / 2),
+            y: Math.floor(GRID_HEIGHT / 2),
             hp: 100,
             maxHp: 100,
             attack: 12,
@@ -180,8 +183,7 @@
         };
 
         // Enemies
-        const enemyCount = 2 + floor;
-        for (let i = 0; i < enemyCount; i++) {
+        for (let i = 0; i < 2 + floor; i++) {
             let pos = getRandomEmptyPosition();
             const isSkeleton = Math.random() > 0.4;
             game.enemies.push({
@@ -189,15 +191,13 @@
                 y: pos.y,
                 type: isSkeleton ? 'SKELETON' : 'SLIME',
                 hp: isSkeleton ? 25 + floor * 8 : 15 + floor * 5,
-                maxHp: isSkeleton ? 25 + floor * 8 : 15 + floor * 5,
                 attack: isSkeleton ? 8 + floor : 5 + floor,
                 defense: isSkeleton ? 3 : 1
             });
         }
 
         // Items
-        const itemCount = 1 + Math.floor(floor / 2);
-        for (let i = 0; i < itemCount; i++) {
+        for (let i = 0; i < 1 + Math.floor(floor / 2); i++) {
             let pos = getRandomEmptyPosition();
             game.items.push({ x: pos.x, y: pos.y, type: 'HEALTH' });
         }
@@ -209,8 +209,8 @@
     function getRandomEmptyPosition() {
         let attempts = 0;
         while (attempts < 100) {
-            const x = Math.floor(Math.random() * (CONFIG.GRID_WIDTH - 4)) + 2;
-            const y = Math.floor(Math.random() * (CONFIG.GRID_HEIGHT - 4)) + 2;
+            const x = Math.floor(Math.random() * (GRID_WIDTH - 4)) + 2;
+            const y = Math.floor(Math.random() * (GRID_HEIGHT - 4)) + 2;
             if (!isOccupied(x, y)) return { x, y };
             attempts++;
         }
@@ -223,53 +223,6 @@
         if (game.items.some(i => i.x === x && i.y === y)) return true;
         if (game.stairs && x === game.stairs.x && y === game.stairs.y) return true;
         return false;
-    }
-
-    // ==================== INITIALIZE ====================
-    function init() {
-        app = new PIXI.Application();
-        
-        app.renderer.init({
-            width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
-            height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
-            backgroundColor: CONFIG.COLORS.FLOOR,
-            resolution: Math.min(window.devicePixelRatio || 1, 2),
-            autoDensity: true,
-            antialias: true
-        });
-
-        document.getElementById('game-container').insertBefore(
-            app.view, 
-            document.getElementById('ui')
-        );
-
-        gameContainer = new PIXI.Container();
-        app.stage.addChild(gameContainer);
-
-        setupControls();
-        document.addEventListener('keydown', handleKeyDown);
-
-        startFloor();
-        app.ticker.add(gameLoop);
-    }
-
-    function setupControls() {
-        const directions = [
-            ['btn-up', 0, -1],
-            ['btn-down', 0, 1],
-            ['btn-left', -1, 0],
-            ['btn-right', 1, 0]
-        ];
-        
-        directions.forEach(([id, dx, dy]) => {
-            const btn = document.getElementById(id);
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); move(dx, dy); });
-            btn.addEventListener('mousedown', () => move(dx, dy));
-        });
-
-        const attackBtn = document.getElementById('btn-attack');
-        attackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); attack(); });
-        attackBtn.addEventListener('mousedown', attack);
     }
 
     // ==================== GAME LOGIC ====================
@@ -298,11 +251,6 @@
     function attack() {
         if (game.state !== 'PLAYING') return;
 
-        if (game.sprites.player) {
-            game.sprites.player.alpha = 0.5;
-            setTimeout(() => game.sprites.player.alpha = 1, 100);
-        }
-
         const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
         let hit = false;
 
@@ -315,11 +263,6 @@
                     const damage = Math.max(1, game.player.attack - e.defense);
                     e.hp -= damage;
                     hit = true;
-
-                    if (game.sprites.enemies[i]) {
-                        game.sprites.enemies[i].tint = 0xff0000;
-                        setTimeout(() => game.sprites.enemies[i].tint = 0xffffff, 100);
-                    }
 
                     if (e.hp <= 0) {
                         game.enemies.splice(i, 1);
@@ -378,9 +321,9 @@
     }
 
     function nextFloor() {
-        if (game.floor >= CONFIG.MAX_FLOORS) {
+        if (game.floor >= MAX_FLOORS) {
             game.state = 'WON';
-            showMessage(`🎉 YOU WIN!\n\nAll ${CONFIG.MAX_FLOORS} floors cleared!\n\nTap to play again`, () => {
+            showMessage(`🎉 YOU WIN!\n\nAll ${MAX_FLOORS} floors cleared!\n\nTap to play again`, () => {
                 game.floor = 1;
                 startFloor();
             });
@@ -392,80 +335,46 @@
 
     // ==================== RENDER ====================
     function render() {
-        gameContainer.removeChildren();
-        game.sprites = {};
+        // Clear
+        ctx.fillStyle = COLORS.FLOOR;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Map
-        for (let y = 0; y < CONFIG.GRID_HEIGHT; y++) {
-            for (let x = 0; x < CONFIG.GRID_WIDTH; x++) {
-                const tile = new PIXI.Graphics();
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            for (let x = 0; x < GRID_WIDTH; x++) {
                 if (game.map[y][x] === 'WALL') {
-                    tile.beginFill(CONFIG.COLORS.WALL);
-                    tile.drawRect(0, 0, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE);
+                    ctx.fillStyle = COLORS.WALL;
+                    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 } else {
-                    tile.beginFill(CONFIG.COLORS.FLOOR);
-                    tile.drawRect(1, 1, CONFIG.TILE_SIZE - 2, CONFIG.TILE_SIZE - 2);
+                    ctx.fillStyle = COLORS.FLOOR;
+                    ctx.fillRect(x * TILE_SIZE + 1, y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
                 }
-                tile.endFill();
-                tile.x = x * CONFIG.TILE_SIZE;
-                tile.y = y * CONFIG.TILE_SIZE;
-                gameContainer.addChild(tile);
             }
         }
 
         // Stairs
         if (game.stairs) {
-            const stairs = new PIXI.Graphics();
-            stairs.beginFill(CONFIG.COLORS.STAIRS);
-            stairs.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
-            stairs.endFill();
-            stairs.x = game.stairs.x * CONFIG.TILE_SIZE;
-            stairs.y = game.stairs.y * CONFIG.TILE_SIZE;
-            gameContainer.addChild(stairs);
+            ctx.fillStyle = COLORS.STAIRS;
+            ctx.fillRect(game.stairs.x * TILE_SIZE + 4, game.stairs.y * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
         }
 
         // Items
-        game.sprites.items = [];
         game.items.forEach(item => {
-            const sprite = new PIXI.Graphics();
-            sprite.beginFill(CONFIG.COLORS.HEALTH);
-            sprite.drawCircle(CONFIG.TILE_SIZE/2, CONFIG.TILE_SIZE/2, 8);
-            sprite.endFill();
-            sprite.x = item.x * CONFIG.TILE_SIZE;
-            sprite.y = item.y * CONFIG.TILE_SIZE;
-            gameContainer.addChild(sprite);
-            game.sprites.items.push(sprite);
+            ctx.fillStyle = COLORS.HEALTH;
+            ctx.beginPath();
+            ctx.arc(item.x * TILE_SIZE + TILE_SIZE/2, item.y * TILE_SIZE + TILE_SIZE/2, 8, 0, Math.PI * 2);
+            ctx.fill();
         });
 
         // Enemies
-        game.sprites.enemies = [];
         game.enemies.forEach(e => {
-            const sprite = new PIXI.Graphics();
-            const color = e.type === 'SLIME' ? CONFIG.COLORS.SLIME : CONFIG.COLORS.SKELETON;
-            sprite.beginFill(color);
-            sprite.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
-            sprite.endFill();
-            sprite.x = e.x * CONFIG.TILE_SIZE;
-            sprite.y = e.y * CONFIG.TILE_SIZE;
-            gameContainer.addChild(sprite);
-            game.sprites.enemies.push(sprite);
+            ctx.fillStyle = e.type === 'SLIME' ? COLORS.SLIME : COLORS.SKELETON;
+            ctx.fillRect(e.x * TILE_SIZE + 4, e.y * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
         });
 
         // Player
-        const player = new PIXI.Graphics();
-        player.beginFill(CONFIG.COLORS.PLAYER);
-        player.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
-        player.endFill();
-        player.x = game.player.x * CONFIG.TILE_SIZE;
-        player.y = game.player.y * CONFIG.TILE_SIZE;
-        gameContainer.addChild(player);
-        game.sprites.player = player;
-    }
-
-    function gameLoop() {
-        if (game.sprites.player) {
-            game.sprites.player.scale.set(1 + Math.sin(Date.now() / 200) * 0.05);
-        }
+        ctx.fillStyle = COLORS.PLAYER;
+        ctx.fillRect(game.player.x * TILE_SIZE + 4, game.player.y * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
     }
 
     // ==================== UI ====================
@@ -506,8 +415,23 @@
         document.getElementById('message-overlay').style.display = 'none';
     }
 
-    // ==================== INPUT ====================
-    function handleKeyDown(e) {
+    // ==================== CONTROLS ====================
+    document.getElementById('btn-up').addEventListener('touchstart', (e) => { e.preventDefault(); move(0, -1); });
+    document.getElementById('btn-up').addEventListener('mousedown', () => move(0, -1));
+    
+    document.getElementById('btn-down').addEventListener('touchstart', (e) => { e.preventDefault(); move(0, 1); });
+    document.getElementById('btn-down').addEventListener('mousedown', () => move(0, 1));
+    
+    document.getElementById('btn-left').addEventListener('touchstart', (e) => { e.preventDefault(); move(-1, 0); });
+    document.getElementById('btn-left').addEventListener('mousedown', () => move(-1, 0));
+    
+    document.getElementById('btn-right').addEventListener('touchstart', (e) => { e.preventDefault(); move(1, 0); });
+    document.getElementById('btn-right').addEventListener('mousedown', () => move(1, 0));
+    
+    document.getElementById('btn-attack').addEventListener('touchstart', (e) => { e.preventDefault(); attack(); });
+    document.getElementById('btn-attack').addEventListener('mousedown', attack);
+
+    document.addEventListener('keydown', (e) => {
         switch(e.key.toLowerCase()) {
             case 'w': case 'arrowup': move(0, -1); break;
             case 's': case 'arrowdown': move(0, 1); break;
@@ -515,10 +439,10 @@
             case 'd': case 'arrowright': move(1, 0); break;
             case ' ': attack(); break;
         }
-    }
+    });
 
-    // Start
-    window.onload = init;
+    // ==================== START ====================
+    startFloor();
     </script>
 </body>
 </html>
