@@ -6,65 +6,79 @@ import { setupControls } from '../utils/controls.js';
 import { showMessage, hideMessage, updateUI } from '../ui/display.js';
 
 /**
- * Main Game Class
+ * Main Game Class - Entry point
+ * Handles game lifecycle and coordinates between systems
  */
 export class Game {
     constructor() {
         this.app = null;
-        this.dungeon = new DungeonGenerator();
+        this.dungeon = null;
         this.renderer = null;
         this.gameState = null;
     }
 
+    /**
+     * Initialize the game
+     */
     async init() {
-        // Initialize PixiJS
+        // Create PixiJS application
         this.app = new PIXI.Application();
         
         await this.app.init({
             width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
             height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
             backgroundColor: CONFIG.COLORS.FLOOR,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true
+            resolution: Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+            antialias: true
         });
 
+        // Insert canvas into DOM
         document.getElementById('game-container').insertBefore(
             this.app.canvas,
             document.getElementById('ui')
         );
 
+        // Initialize renderer
         this.renderer = new GameRenderer(this.app);
 
-        // Setup controls
+        // Initialize dungeon generator
+        this.dungeon = new DungeonGenerator();
+
+        // Setup input handlers
+        this._setupInput();
+
+        // Start first floor
+        this.startFloor();
+
+        // Start game loop
+        this.app.ticker.add((ticker) => this._update(ticker.lastTime));
+    }
+
+    _setupInput() {
         setupControls({
             onMove: (dx, dy) => this.move(dx, dy),
             onAttack: () => this.attack()
         });
 
-        // Keyboard
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-
-        // Start first floor
-        this.startFloor();
-
-        // Game loop
-        this.app.ticker.add((ticker) => this.update(ticker.lastTime));
+        document.addEventListener('keydown', (e) => this._handleKeyDown(e));
     }
 
+    /**
+     * Start a new floor
+     */
     startFloor() {
-        this.gameState = this.dungeon.generate(this.gameState?.floor || 1);
+        const currentFloor = this.gameState?.floor || 1;
+        this.gameState = this.dungeon.generate(currentFloor);
         
-        this.renderer.clear();
-        this.renderer.renderMap(this.gameState.map);
-        this.renderer.renderStairs(this.gameState.stairs);
-        this.renderer.renderItems(this.gameState.items);
-        this.renderer.renderEnemies(this.gameState.enemies);
-        this.renderer.renderPlayer(this.gameState.player);
-        
+        this.renderer.render(this.gameState);
         updateUI(this.gameState.player, this.gameState.floor);
         hideMessage();
     }
 
+    /**
+     * Move player in direction
+     */
     move(dx, dy) {
         if (this.gameState.state !== 'PLAYING') return;
 
@@ -72,20 +86,23 @@ export class Game {
         const newX = player.x + dx;
         const newY = player.y + dy;
 
-        if (map[newY] && map[newY][newX] === 'FLOOR') {
+        if (map[newY]?.[newX] === 'FLOOR') {
             player.x = newX;
             player.y = newY;
-            this.checkCollisions();
+            this._checkCollisions();
             this.renderer.updatePlayerPosition(player);
         }
     }
 
+    /**
+     * Attack adjacent enemies
+     */
     attack() {
         if (this.gameState.state !== 'PLAYING') return;
 
         const { player, enemies } = this.gameState;
         
-        // Flash player
+        // Visual feedback
         this.renderer.playerSprite?.flash();
 
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
@@ -115,33 +132,33 @@ export class Game {
         }
     }
 
-    checkCollisions() {
+    /**
+     * Check for collisions after movement
+     */
+    _checkCollisions() {
         const { player, items, stairs, enemies, floor } = this.gameState;
 
-        // Items
-        player.hp = Math.min(player.hp + 30, player.maxHp);
-        this.gameState.items = items.filter(item => {
-            if (item.x === player.x && item.y === player.y) {
-                player.hp = Math.min(player.hp + 30, player.maxHp);
-                return false;
-            }
-            return true;
-        });
+        // Collect items
+        const wasOnItem = items.some(item => item.x === player.x && item.y === player.y);
+        if (wasOnItem) {
+            player.hp = Math.min(player.hp + 30, player.maxHp);
+        }
+        this.gameState.items = items.filter(item => !(item.x === player.x && item.y === player.y));
         this.renderer.updateItems(this.gameState.items);
 
-        // Stairs
+        // Check stairs
         if (stairs && player.x === stairs.x && player.y === stairs.y) {
-            this.nextFloor();
+            this._nextFloor();
             return;
         }
 
-        // Enemies
+        // Check enemy collisions
         this.gameState.enemies = enemies.filter(e => {
             if (e.x === player.x && e.y === player.y) {
                 const damage = Math.max(1, e.attack - player.defense);
                 player.hp -= damage;
 
-                // Push enemy
+                // Push enemy away
                 const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
                 const dir = dirs[Math.floor(Math.random() * dirs.length)];
                 const newX = e.x + dir[0];
@@ -156,6 +173,7 @@ export class Game {
             return true;
         });
 
+        // Check death
         if (player.hp <= 0) {
             this.gameState.state = 'LOST';
             showMessage(
@@ -171,7 +189,10 @@ export class Game {
         this.renderer.updateEnemies(this.gameState.enemies);
     }
 
-    nextFloor() {
+    /**
+     * Progress to next floor
+     */
+    _nextFloor() {
         if (this.gameState.floor >= CONFIG.MAX_FLOORS) {
             this.gameState.state = 'WON';
             showMessage(
@@ -187,17 +208,23 @@ export class Game {
         }
     }
 
-    handleKeyDown(e) {
+    /**
+     * Handle keyboard input
+     */
+    _handleKeyDown(e) {
         switch (e.key.toLowerCase()) {
-            case 'w': case 'arrowup': this.move(0, -1); break;
-            case 's': case 'arrowdown': this.move(0, 1); break;
-            case 'a': case 'arrowleft': this.move(-1, 0); break;
+            case 'w': case 'arrowup':    this.move(0, -1); break;
+            case 's': case 'arrowdown':  this.move(0, 1); break;
+            case 'a': case 'arrowleft':  this.move(-1, 0); break;
             case 'd': case 'arrowright': this.move(1, 0); break;
             case ' ': this.attack(); break;
         }
     }
 
-    update(time) {
+    /**
+     * Game loop - called every frame
+     */
+    _update(time) {
         this.renderer?.animatePlayer(time);
     }
 }
