@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Simple Rogue-like</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -125,11 +126,399 @@
         </div>
     </div>
 
-    <script type="module">
-        import { Game } from './src/game/game.js';
+    <script>
+    // ==================== CONFIG ====================
+    const CONFIG = Object.freeze({
+        TILE_SIZE: 28,
+        GRID_WIDTH: 20,
+        GRID_HEIGHT: 14,
+        MAX_FLOORS: 5,
+        COLORS: Object.freeze({
+            WALL: 0x2a2a3a,
+            FLOOR: 0x151520,
+            PLAYER: 0x4ade80,
+            SLIME: 0x60a5fa,
+            SKELETON: 0xe5e5e5,
+            STAIRS: 0xfbbf24,
+            HEALTH: 0xf472b6
+        })
+    });
+
+    // ==================== GAME STATE ====================
+    let app, gameContainer;
+    let game = {
+        floor: 1,
+        state: 'PLAYING',
+        map: [],
+        player: null,
+        enemies: [],
+        items: [],
+        stairs: null,
+        sprites: {}
+    };
+
+    // ==================== DUNGEON ====================
+    function generateDungeon(floor) {
+        game.map = [];
+        game.enemies = [];
+        game.items = [];
+
+        for (let y = 0; y < CONFIG.GRID_HEIGHT; y++) {
+            game.map[y] = [];
+            for (let x = 0; x < CONFIG.GRID_WIDTH; x++) {
+                game.map[y][x] = (x === 0 || x === CONFIG.GRID_WIDTH - 1 || y === 0 || y === CONFIG.GRID_HEIGHT - 1) ? 'WALL' : 'FLOOR';
+            }
+        }
+
+        game.player = {
+            x: Math.floor(CONFIG.GRID_WIDTH / 2),
+            y: Math.floor(CONFIG.GRID_HEIGHT / 2),
+            hp: 100,
+            maxHp: 100,
+            attack: 12,
+            defense: 5
+        };
+
+        // Enemies
+        const enemyCount = 2 + floor;
+        for (let i = 0; i < enemyCount; i++) {
+            let pos = getRandomEmptyPosition();
+            const isSkeleton = Math.random() > 0.4;
+            game.enemies.push({
+                x: pos.x,
+                y: pos.y,
+                type: isSkeleton ? 'SKELETON' : 'SLIME',
+                hp: isSkeleton ? 25 + floor * 8 : 15 + floor * 5,
+                maxHp: isSkeleton ? 25 + floor * 8 : 15 + floor * 5,
+                attack: isSkeleton ? 8 + floor : 5 + floor,
+                defense: isSkeleton ? 3 : 1
+            });
+        }
+
+        // Items
+        const itemCount = 1 + Math.floor(floor / 2);
+        for (let i = 0; i < itemCount; i++) {
+            let pos = getRandomEmptyPosition();
+            game.items.push({ x: pos.x, y: pos.y, type: 'HEALTH' });
+        }
+
+        // Stairs
+        game.stairs = getRandomEmptyPosition();
+    }
+
+    function getRandomEmptyPosition() {
+        let attempts = 0;
+        while (attempts < 100) {
+            const x = Math.floor(Math.random() * (CONFIG.GRID_WIDTH - 4)) + 2;
+            const y = Math.floor(Math.random() * (CONFIG.GRID_HEIGHT - 4)) + 2;
+            if (!isOccupied(x, y)) return { x, y };
+            attempts++;
+        }
+        return { x: 3, y: 3 };
+    }
+
+    function isOccupied(x, y) {
+        if (game.player && x === game.player.x && y === game.player.y) return true;
+        if (game.enemies.some(e => e.x === x && e.y === y)) return true;
+        if (game.items.some(i => i.x === x && i.y === y)) return true;
+        if (game.stairs && x === game.stairs.x && y === game.stairs.y) return true;
+        return false;
+    }
+
+    // ==================== INITIALIZE ====================
+    function init() {
+        app = new PIXI.Application();
         
-        const game = new Game();
-        window.onload = () => game.init();
+        app.renderer.init({
+            width: CONFIG.GRID_WIDTH * CONFIG.TILE_SIZE,
+            height: CONFIG.GRID_HEIGHT * CONFIG.TILE_SIZE,
+            backgroundColor: CONFIG.COLORS.FLOOR,
+            resolution: Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+            antialias: true
+        });
+
+        document.getElementById('game-container').insertBefore(
+            app.view, 
+            document.getElementById('ui')
+        );
+
+        gameContainer = new PIXI.Container();
+        app.stage.addChild(gameContainer);
+
+        setupControls();
+        document.addEventListener('keydown', handleKeyDown);
+
+        startFloor();
+        app.ticker.add(gameLoop);
+    }
+
+    function setupControls() {
+        const directions = [
+            ['btn-up', 0, -1],
+            ['btn-down', 0, 1],
+            ['btn-left', -1, 0],
+            ['btn-right', 1, 0]
+        ];
+        
+        directions.forEach(([id, dx, dy]) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); move(dx, dy); });
+            btn.addEventListener('mousedown', () => move(dx, dy));
+        });
+
+        const attackBtn = document.getElementById('btn-attack');
+        attackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); attack(); });
+        attackBtn.addEventListener('mousedown', attack);
+    }
+
+    // ==================== GAME LOGIC ====================
+    function startFloor() {
+        game.state = 'PLAYING';
+        generateDungeon(game.floor);
+        render();
+        updateUI();
+        hideMessage();
+    }
+
+    function move(dx, dy) {
+        if (game.state !== 'PLAYING') return;
+
+        const newX = game.player.x + dx;
+        const newY = game.player.y + dy;
+
+        if (game.map[newY] && game.map[newY][newX] === 'FLOOR') {
+            game.player.x = newX;
+            game.player.y = newY;
+            checkCollisions();
+            render();
+        }
+    }
+
+    function attack() {
+        if (game.state !== 'PLAYING') return;
+
+        if (game.sprites.player) {
+            game.sprites.player.alpha = 0.5;
+            setTimeout(() => game.sprites.player.alpha = 1, 100);
+        }
+
+        const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+        let hit = false;
+
+        dirs.forEach(([dx, dy]) => {
+            const tx = game.player.x + dx;
+            const ty = game.player.y + dy;
+
+            game.enemies.forEach((e, i) => {
+                if (e.x === tx && e.y === ty) {
+                    const damage = Math.max(1, game.player.attack - e.defense);
+                    e.hp -= damage;
+                    hit = true;
+
+                    if (game.sprites.enemies[i]) {
+                        game.sprites.enemies[i].tint = 0xff0000;
+                        setTimeout(() => game.sprites.enemies[i].tint = 0xffffff, 100);
+                    }
+
+                    if (e.hp <= 0) {
+                        game.enemies.splice(i, 1);
+                    }
+                }
+            });
+        });
+
+        if (hit) render();
+    }
+
+    function checkCollisions() {
+        // Items
+        game.items = game.items.filter(item => {
+            if (item.x === game.player.x && item.y === game.player.y) {
+                game.player.hp = Math.min(game.player.hp + 30, game.player.maxHp);
+                return false;
+            }
+            return true;
+        });
+
+        // Stairs
+        if (game.stairs && game.player.x === game.stairs.x && game.player.y === game.stairs.y) {
+            nextFloor();
+            return;
+        }
+
+        // Enemies
+        game.enemies = game.enemies.filter(e => {
+            if (e.x === game.player.x && e.y === game.player.y) {
+                const damage = Math.max(1, e.attack - game.player.defense);
+                game.player.hp -= damage;
+
+                const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                const dir = dirs[Math.floor(Math.random() * dirs.length)];
+                const newX = e.x + dir[0];
+                const newY = e.y + dir[1];
+                if (game.map[newY] && game.map[newY][newX] === 'FLOOR' && !isOccupied(newX, newY)) {
+                    e.x = newX;
+                    e.y = newY;
+                }
+                return true;
+            }
+            return true;
+        });
+
+        if (game.player.hp <= 0) {
+            game.state = 'LOST';
+            showMessage(`💀 GAME OVER\n\nFloor: ${game.floor}\n\nTap to restart`, () => {
+                game.floor = 1;
+                startFloor();
+            });
+        }
+
+        updateUI();
+    }
+
+    function nextFloor() {
+        if (game.floor >= CONFIG.MAX_FLOORS) {
+            game.state = 'WON';
+            showMessage(`🎉 YOU WIN!\n\nAll ${CONFIG.MAX_FLOORS} floors cleared!\n\nTap to play again`, () => {
+                game.floor = 1;
+                startFloor();
+            });
+        } else {
+            game.floor++;
+            startFloor();
+        }
+    }
+
+    // ==================== RENDER ====================
+    function render() {
+        gameContainer.removeChildren();
+        game.sprites = {};
+
+        // Map
+        for (let y = 0; y < CONFIG.GRID_HEIGHT; y++) {
+            for (let x = 0; x < CONFIG.GRID_WIDTH; x++) {
+                const tile = new PIXI.Graphics();
+                if (game.map[y][x] === 'WALL') {
+                    tile.beginFill(CONFIG.COLORS.WALL);
+                    tile.drawRect(0, 0, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE);
+                } else {
+                    tile.beginFill(CONFIG.COLORS.FLOOR);
+                    tile.drawRect(1, 1, CONFIG.TILE_SIZE - 2, CONFIG.TILE_SIZE - 2);
+                }
+                tile.endFill();
+                tile.x = x * CONFIG.TILE_SIZE;
+                tile.y = y * CONFIG.TILE_SIZE;
+                gameContainer.addChild(tile);
+            }
+        }
+
+        // Stairs
+        if (game.stairs) {
+            const stairs = new PIXI.Graphics();
+            stairs.beginFill(CONFIG.COLORS.STAIRS);
+            stairs.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
+            stairs.endFill();
+            stairs.x = game.stairs.x * CONFIG.TILE_SIZE;
+            stairs.y = game.stairs.y * CONFIG.TILE_SIZE;
+            gameContainer.addChild(stairs);
+        }
+
+        // Items
+        game.sprites.items = [];
+        game.items.forEach(item => {
+            const sprite = new PIXI.Graphics();
+            sprite.beginFill(CONFIG.COLORS.HEALTH);
+            sprite.drawCircle(CONFIG.TILE_SIZE/2, CONFIG.TILE_SIZE/2, 8);
+            sprite.endFill();
+            sprite.x = item.x * CONFIG.TILE_SIZE;
+            sprite.y = item.y * CONFIG.TILE_SIZE;
+            gameContainer.addChild(sprite);
+            game.sprites.items.push(sprite);
+        });
+
+        // Enemies
+        game.sprites.enemies = [];
+        game.enemies.forEach(e => {
+            const sprite = new PIXI.Graphics();
+            const color = e.type === 'SLIME' ? CONFIG.COLORS.SLIME : CONFIG.COLORS.SKELETON;
+            sprite.beginFill(color);
+            sprite.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
+            sprite.endFill();
+            sprite.x = e.x * CONFIG.TILE_SIZE;
+            sprite.y = e.y * CONFIG.TILE_SIZE;
+            gameContainer.addChild(sprite);
+            game.sprites.enemies.push(sprite);
+        });
+
+        // Player
+        const player = new PIXI.Graphics();
+        player.beginFill(CONFIG.COLORS.PLAYER);
+        player.drawRect(4, 4, CONFIG.TILE_SIZE - 8, CONFIG.TILE_SIZE - 8);
+        player.endFill();
+        player.x = game.player.x * CONFIG.TILE_SIZE;
+        player.y = game.player.y * CONFIG.TILE_SIZE;
+        gameContainer.addChild(player);
+        game.sprites.player = player;
+    }
+
+    function gameLoop() {
+        if (game.sprites.player) {
+            game.sprites.player.scale.set(1 + Math.sin(Date.now() / 200) * 0.05);
+        }
+    }
+
+    // ==================== UI ====================
+    function updateUI() {
+        document.getElementById('hp-text').textContent = game.player.hp;
+        document.getElementById('max-hp-text').textContent = game.player.maxHp;
+        
+        const hpPercent = (game.player.hp / game.player.maxHp) * 100;
+        const hpFill = document.getElementById('hp-fill');
+        hpFill.style.width = hpPercent + '%';
+        
+        if (hpPercent > 60) hpFill.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)';
+        else if (hpPercent > 30) hpFill.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
+        else hpFill.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
+
+        document.getElementById('floor-text').textContent = game.floor;
+    }
+
+    function showMessage(text, callback) {
+        const overlay = document.getElementById('message-overlay');
+        document.getElementById('message-text').textContent = text;
+        overlay.style.display = 'flex';
+        
+        const handler = () => {
+            overlay.style.display = 'none';
+            document.removeEventListener('click', handler);
+            document.removeEventListener('touchstart', handler);
+            callback();
+        };
+        
+        setTimeout(() => {
+            document.addEventListener('click', handler);
+            document.addEventListener('touchstart', handler);
+        }, 500);
+    }
+
+    function hideMessage() {
+        document.getElementById('message-overlay').style.display = 'none';
+    }
+
+    // ==================== INPUT ====================
+    function handleKeyDown(e) {
+        switch(e.key.toLowerCase()) {
+            case 'w': case 'arrowup': move(0, -1); break;
+            case 's': case 'arrowdown': move(0, 1); break;
+            case 'a': case 'arrowleft': move(-1, 0); break;
+            case 'd': case 'arrowright': move(1, 0); break;
+            case ' ': attack(); break;
+        }
+    }
+
+    // Start
+    window.onload = init;
     </script>
 </body>
 </html>
